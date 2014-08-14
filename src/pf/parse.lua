@@ -233,26 +233,15 @@ local function tokens(str)
       local tok = next(opts)
       assert(tok == expected, "expected "..expected..", got: "..tok)
    end
+   local function put(tok)
+      str = string.sub(str, 1, pos - 1)..tok..string.sub(str, pos + 1)
+   end
    local function check(expected, opts)
       if peek(opts) ~= expected then return false end
       next()
       return true
    end
-   local function error_str(message, ...)
-      local location_error_message = "Error: In expression \"%s\""
-      local start = #location_error_message - 4
-      local cursor_pos = start + last_pos
-
-      local result = "\n"
-      result = result..location_error_message:format(str).."\n"
-      result = result..string.rep(" ", cursor_pos).."^".."\n"
-      result = result..message:format(...).."\n"
-      return result
-   end
-   local function error(message, ...)
-       primitive_error(error_str(message, ...))
-   end
-   return { peek = peek, next = next, consume = consume, check = check, error = error }
+   return { peek = peek, next = next, consume = consume, check = check, put = put }
 end
 
 local addressables = set(
@@ -685,6 +674,16 @@ function parse_arithmetic(lexer, tok, max_precedence, parsed_exp)
    end
 end
 
+local last_keyword = (function()
+   local keyword = nil
+   return function(arg)
+      if arg ~= nil then
+         keyword = arg
+      end
+      return keyword
+   end
+end)()
+
 local function parse_primitive_or_arithmetic(lexer)
    local tok = lexer.next({maybe_arithmetic=true})
    if (type(tok) == 'number' or tok == 'len' or
@@ -693,15 +692,18 @@ local function parse_primitive_or_arithmetic(lexer)
    end
 
    local parser = primitives[tok]
-   if parser then return parser(lexer, tok) end
+   if parser then
+      last_keyword(tok)
+      return parser(lexer, tok)
+   else
+      lexer.put(tok)
+      local parser = primitives[last_keyword()]
+      if parser then
+         return parser(lexer, last_keyword())
+      end
+   end
 
-   -- At this point the official pcap grammar is squirrely.  It says:
-   -- "If an identifier is given without a keyword, the most recent
-   -- keyword is assumed.  For example, `not host vs and ace' is
-   -- short for `not host vs and host ace` and which should not be
-   -- confused with `not (host vs or ace)`."  For now we punt on this
-   -- part of the grammar.
-   lexer.error('keyword elision not implemented %s', tok)
+   lexer.error(string.format("keyword elision not implemented: %s", tok))
 end
 
 local logical_precedence = {
@@ -769,6 +771,7 @@ function parse(str)
    if not lexer.peek({maybe_arithmetic=true}) then return { 'true' } end
    local expr = parse_logical(lexer)
    assert(not lexer.peek(), "unexpected token", lexer.peek())
+   last_keyword("")
    return expr
 end
 
@@ -858,5 +861,9 @@ function selftest ()
              { 'ether_host', { 'ehost', 255, 255, 255, 51, 51, 51 } })
    parse_test("ether host f:f:f:3:3:3",
              { 'ether_host', { 'ehost', 240, 240, 240, 48, 48, 48 } })
+   parse_test("not host vs and ace",
+              { 'not', { 'and', { 'host', 'vs' }, { 'host', 'ace' } } } )
+   parse_test("not ( host vs or ace )",
+              { 'not', { 'or', { 'host', 'vs' }, { 'host', 'ace' } } } )
    print("OK")
 end

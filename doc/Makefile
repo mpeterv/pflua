@@ -12,10 +12,14 @@ EXAMPLES = \
 	src-net-ffff.ffff.eeee.eeee.1.0.0.0-82.md \
 	src-net-ffff.ffff.eeee.eeee.0.0.0.0-72.md \
 	src-port-80.md \
-	dst-portrange-80-90.md
+	dst-portrange-80-90.md \
 	ether-multicast.md \
 	ether-broadcast.md \
-	ether-proto-decnet.md
+	ether-proto-decnet.md \
+	ip-multicast.md \
+	ip-proto-ah.md \
+	ip6-multicast.md \
+	ip6-proto-ah.md
 
 PFLUA = \
 	../src/pf.lua \
@@ -74,3 +78,15 @@ ether-broadcast.md:
 
 ether-proto-decnet.md:
 	../tools/dump-markdown "ether proto \decnet" > $@.tmp && mv $@.tmp $@
+
+ip-multicast.md:
+	../tools/dump-markdown "ip multicast" > $@.tmp && mv $@.tmp $@
+
+ip-proto-ah.md:
+	../tools/dump-markdown "ip proto \ah" > $@.tmp && mv $@.tmp $@
+
+ip6-multicast.md:
+	../tools/dump-markdown "ip6 multicast" > $@.tmp && mv $@.tmp $@
+
+ip6-proto-ah.md:
+	../tools/dump-markdown "ip6 proto \ah" > $@.tmp && mv $@.tmp $@

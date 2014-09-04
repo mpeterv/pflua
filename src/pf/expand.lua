@@ -10,10 +10,6 @@ local set, concat, pp = utils.set, utils.concat, utils.pp
 local uint16, uint32 = utils.uint16, utils.uint32
 local ipv4_to_int, ipv6_as_4x32 = utils.ipv4_to_int, utils.ipv6_as_4x32
 
-local ip_protos = set(
-   'icmp', 'icmp6', 'igmp', 'igrp', 'pim', 'ah', 'esp', 'vrrp', 'udp', 'tcp'
-)
-
 local llc_types = set(
    'i', 's', 'u', 'rr', 'rnr', 'rej', 'ui', 'ua',
    'disc', 'sabme', 'test', 'xis', 'frmr'
@@ -74,10 +70,17 @@ local ether_min_payloads = {
 }
 
 -- IP protocols
-local PROTO_ICMP = 1
-local PROTO_TCP = 6
-local PROTO_UDP = 17
-local PROTO_SCTP = 132
+local PROTO_ICMP = 1          -- 0x1
+local PROTO_TCP = 6           -- 0x6
+local PROTO_UDP = 17          -- 0x11
+local PROTO_SCTP = 132        -- 0x84
+local PROTO_IGMP = 2          -- 0x2
+local PROTO_IGRP = 9          -- 0x9
+local PROTO_PIM = 103         -- 0x67
+local PROTO_AH = 51           -- 0x33
+local PROTO_ESP = 50          -- 0x32
+local PROTO_VRRP = 112        -- 0x70
+
 local ip_min_payloads = {
    [PROTO_ICMP] = 8,
    [PROTO_UDP] = 8,
@@ -360,6 +363,49 @@ local function expand_ip_host(expr)
    return { 'or', expand_ip_src_host(expr), expand_ip_dst_host(expr) }
 end
 
+local function expand_ip_broadcast(expr)
+   error("netmask not known, so 'ip broadcast' not supported")
+end
+local function expand_ip6_broadcast(expr)
+   error("only link-layer/IP broadcast filters supported")
+end
+local function expand_ip_multicast(expr)
+   return { '=', { '[ip]', 16, 1 }, 224 }
+end
+local function expand_ip6_multicast(expr)
+   return { '=', { '[ip6]', 24, 1 }, 255 }
+end
+local function expand_ip_protochain(expr)
+   -- FIXME: Not implemented yet. BPF code of ip protochain is rather complex.
+   return unimplemented(expr)
+end
+local function expand_ip6_protochain(expr)
+   -- FIXME: Not implemented yet. BPF code of ip6 protochain is rather complex.
+   return unimplemented(expr)
+end
+
+local ip_protos = {
+   icmp = PROTO_ICMP,
+   igmp = PROTO_IGMP,
+   igrp = PROTO_IGRP,
+   pim  = PROTO_PIM,
+   ah   = PROTO_AH,
+   esp  = PROTO_ESP,
+   vrrp = PROTO_VRRP,
+   udp  = PROTO_UDP,
+   tcp  = PROTO_TCP,
+}
+
+local function expand_ip_proto(expr, ip_type)
+   local proto = expr[2]
+   if (type(proto) == 'string') then
+      proto = ip_protos[proto]
+   end
+   assert(proto and (ip_type == 'ip' or ip_type == 'ip6'), "Invalid ip protocol")
+   if ip_type == 'ip' then return has_ipv4_protocol(proto) end
+   if ip_type == 'ip6' then return has_ipv6_protocol(proto) end
+end
+
 -- ARP protocol
 
 local function expand_arp_src_host(expr)
@@ -524,6 +570,14 @@ local function expand_aarp(expr)
                { '=', { '[ether]', 18, 2 }, 33011 },
                { '=', { '[ether]', 14, 4 }, 2863268608 } } } }
 end
+local function byte_size_of(number)
+  return number < 256 and 1 or number < 65536 and 2 or 4
+end
+local function expand_ether_proto_number(proto)
+  return { 'if', { '>', { '[ether]', 12, 2}, 1500 },
+           { 'fail' },
+           { '=', { '[ether]', 14, byte_size_of(proto) }, proto } }
+end
 local function expand_decnet(expr)
    return has_ether_protocol(PROTO_DECNET)
 end
@@ -587,7 +641,11 @@ local ether_protos = {
 }
 
 local function expand_ether_proto(expr)
-   return ether_protos[expr[2]](expr)
+   local proto = expr[2]
+   if (type(proto) == 'string') then
+     return ether_protos[proto](expr)
+   end
+   return expand_ether_proto_number(proto)
 end
 
 -- Net
@@ -635,19 +693,20 @@ local primitive_expanders = {
    less = unimplemented,
    greater = unimplemented,
    ip = expand_ip,
-   ip_proto = unimplemented,
-   ip_protochain = unimplemented,
+   ip_proto = function(expr) return expand_ip_proto(expr, 'ip') end,
+   ip_protochain = expand_ip_protochain,
    ip_host = expand_ip_host,
    ip_src = expand_ip_src_host,
    ip_src_host = expand_ip_src_host,
    ip_dst = expand_ip_dst_host,
    ip_dst_host = expand_ip_dst_host,
-   ip_broadcast = unimplemented,
-   ip_multicast = unimplemented,
+   ip_broadcast = expand_ip_broadcast,
+   ip_multicast = expand_ip_multicast,
    ip6 = expand_ip6,
-   ip6_proto = unimplemented,
-   ip6_protochain = unimplemented,
-   ip6_multicast = unimplemented,
+   ip6_proto = function(expr) return expand_ip_proto(expr, 'ip6') end,
+   ip6_protochain = expand_ip6_protochain,
+   ip6_broadcast = expand_ip6_broadcast,
+   ip6_multicast = expand_ip6_multicast,
    proto = unimplemented,
    tcp = function(expr) return has_ip_protocol(PROTO_TCP) end,
    tcp_port = expand_tcp_port,
@@ -664,6 +723,12 @@ local primitive_expanders = {
    udp_src_portrange = expand_udp_src_portrange,
    udp_dst_portrange = expand_udp_dst_portrange,
    icmp = function(expr) return has_ip_protocol(PROTO_ICMP) end,
+   igmp = function(expr) return has_ip_protocol(PROTO_IGMP) end,
+   igrp = function(expr) return has_ip_protocol(PROTO_IGRP) end,
+   pim = function(expr) return has_ip_protocol(PROTO_PIM) end,
+   ah = function(expr) return has_ip_protocol(PROTO_AH) end,
+   esp = function(expr) return has_ip_protocol(PROTO_ESP) end,
+   vrrp = function(expr) return has_ip_protocol(PROTO_VRRP) end,
    protochain = unimplemented,
    arp = expand_arp,
    arp_host = expand_arp_host,

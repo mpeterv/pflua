@@ -415,6 +415,8 @@ end
 local function parse_proto_arg(lexer, proto_type, protos)
    lexer.check('\\')
    local arg = lexer.next()
+   if not proto_type then proto_type = 'ip' end
+   if not protos then protos = ip_protos end
    if type(arg) == 'number' then return arg end
    if type(arg) == 'string' then
       local proto = arg:match("^(%w+)")
@@ -433,7 +435,7 @@ local function parse_ether_proto_arg(lexer)
 end
 
 local ip_protos = set(
-   'icmp', 'icmp6', 'igmp', 'igrp', 'pim', 'ah', 'esp', 'vrrp', 'udp', 'tcp'
+   'icmp', 'icmp6', 'igmp', 'igrp', 'pim', 'ah', 'esp', 'vrrp', 'udp', 'tcp', 'sctp'
 )
 
 local function parse_ip_proto_arg(lexer)

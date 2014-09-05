@@ -399,6 +399,7 @@ local ip_protos = {
    vrrp = PROTO_VRRP,
    udp  = PROTO_UDP,
    tcp  = PROTO_TCP,
+   sctp = PROTO_SCTP,
 }
 
 local function expand_ip_proto(expr, ip_type)
@@ -734,7 +735,7 @@ local primitive_expanders = {
    ip6_protochain = expand_ip6_protochain,
    ip6_broadcast = expand_ip6_broadcast,
    ip6_multicast = expand_ip6_multicast,
-   proto = unimplemented,
+   proto = expand_ip_proto,
    tcp = function(expr) return has_ip_protocol(PROTO_TCP) end,
    tcp_port = expand_tcp_port,
    tcp_src_port = expand_tcp_src_port,
@@ -756,7 +757,7 @@ local primitive_expanders = {
    ah = function(expr) return has_ip_protocol(PROTO_AH) end,
    esp = function(expr) return has_ip_protocol(PROTO_ESP) end,
    vrrp = function(expr) return has_ip_protocol(PROTO_VRRP) end,
-   protochain = unimplemented,
+   protochain = expand_ip_protochain,
    arp = expand_arp,
    arp_host = expand_arp_host,
    arp_src = expand_arp_src_host,

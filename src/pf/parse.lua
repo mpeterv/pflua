@@ -399,6 +399,7 @@ local function parse_ehost_arg(lexer)
    lexer.error('invalid ethernet host %s', arg)
 end
 
+
 local function table_parser(table, default)
    return function (lexer, tok)
       local subtok = lexer.peek()
@@ -437,6 +438,12 @@ local ip_protos = set(
 
 local function parse_ip_proto_arg(lexer)
    return parse_proto_arg(lexer, 'ip', ip_protos)
+end
+
+local iso_protos = set('clnp', 'esis', 'isis')
+
+local function parse_iso_proto_arg(lexer)
+   return parse_proto_arg(lexer, 'iso', iso_protos)
 end
 
 local function simple_typed_arg_parser(expected)
@@ -494,8 +501,6 @@ local wlan_frame_data_subtypes = set(
 )
 
 local wlan_directions = set('nods', 'tods', 'fromds', 'dstods')
-
-local iso_proto_types = set('clnp', 'esis', 'isis')
 
 local function parse_enum_arg(lexer, set)
    local arg = lexer.next()
@@ -595,7 +600,7 @@ local wlan_types = {
 }
 
 local iso_types = {
-   proto = unary(enum_arg_parser(iso_proto_types)),
+   proto = unary(parse_iso_proto_arg),
    ta = unary(parse_ehost_arg),
    addr1 = unary(parse_ehost_arg),
    addr2 = unary(parse_ehost_arg),

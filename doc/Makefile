@@ -26,7 +26,9 @@ EXAMPLES = \
 	ip-proto-ah.md \
 	ip6-multicast.md \
 	ip6-proto-ah.md \
-	iso-proto-clnp.md
+	iso-proto-clnp.md \
+	decnet-src-10.15.md \
+	decnet-host-10.15.md
 
 PFLUA = \
 	../src/pf.lua \
@@ -119,3 +121,9 @@ ip6-proto-ah.md:
 
 iso-proto-clnp.md:
 	../tools/dump-markdown "iso proto \clnp" > $@.tmp && mv $@.tmp $@
+
+decnet-src-10.15.md:
+	../tools/dump-markdown "decnet src 10.15" > $@.tmp && mv $@.tmp $@
+
+decnet-host-10.15.md:
+	../tools/dump-markdown "decnet host 10.15" > $@.tmp && mv $@.tmp $@

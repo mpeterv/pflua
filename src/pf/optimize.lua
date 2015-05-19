@@ -137,22 +137,24 @@ local function try_invert(relop, expr, C)
       end
    elseif bitops[op] and is_eq then
       local lhs, rhs = expr[2], expr[3]
-      if type(lhs) == 'number' and rhs[1] == 'ntohl' then
-         -- bitop(C, ntohl(X)) = C => bitop(ntohl(C), X) = ntohl(C)
-         local swap = assert(folders[rhs[1]])
-         return relop, { op, swap(lhs), rhs[2] }, swap(C)
-      elseif type(rhs) == 'number' and lhs[1] == 'ntohl' then
+      if type(rhs) == 'number' and lhs[1] == 'ntohl' then
          -- bitop(ntohl(X), C) = C => bitop(X, ntohl(C)) = ntohl(C)
          local swap = assert(folders[lhs[1]])
          return relop, { op, lhs[2], swap(rhs) }, swap(C)
       elseif op == '&' then
-         if type(lhs) == 'number' then lhs, rhs = rhs, lhs end
          if (type(lhs) == 'table' and lhs[1] == 'ntohs'
              and type(rhs) == 'number' and 0 <= C and C <= UINT16_MAX) then
             -- ntohs(X) & C = C => X & ntohs(C) = ntohs(C)
             local swap = assert(folders[lhs[1]])
             return relop, { op, lhs[2], swap(rhs) }, swap(C)
          end
+      end
+   elseif op == '+' then
+      local lhs, rhs = expr[2], expr[3]
+      if type(rhs) == 'number' and rhs <= C then
+         -- A + C1 relop C2 => A relop C2 - C1
+         local substract = assert(folders['-'])
+         return relop, lhs, substract(C, rhs)
       end
    end
    return relop, expr, C
@@ -215,6 +217,31 @@ local function simplify(expr, is_tail)
          op, lhs, rhs = try_invert(assert(commute[op]), rhs, lhs)
       elseif type(rhs) == 'number' then
          op, lhs, rhs = try_invert(op, lhs, rhs)
+      elseif lhs[1] == '+' and rhs[1] == '+' then
+         if type(lhs[3]) == 'number' and type(rhs[3]) == 'number' then
+            local substract = assert(folders['-'])
+            if lhs[3] < rhs[3] then
+               -- A + N1 relop B + N2 -> A relop B + (N2 - N1)
+               lhs, rhs = lhs[2], { '+', rhs[2], substract(rhs[3], lhs[3]) }
+            else
+               -- A + N1 relop B + N2 -> A + (N1 - N2) relop B
+               lhs, rhs = { '+', lhs[2], substract(lhs[3], rhs[3]) }, rhs[2]
+            end
+         end
+      end
+      if type(lhs) == 'table' and lhs[1] == '+' and lhs[3] == 1 then
+         -- A + 1 > B -> A >= B, A + 1 <= B -> A < B
+         local transform = {['>'] = '>=', ['<='] = '<'}
+         if transform[op] then
+            op, lhs = transform[op], lhs[2]
+         end
+      elseif type(rhs) == 'table' and rhs[1] == '+' and rhs[3] == 1 and op == '<' then
+         -- A < B + 1 -> A <= B, A >= B + 1 -> A > B
+         local transform = {['<'] = '<=', ['>='] = '>'}
+         op, rhs = '<=', rhs[2]
+         if transform[op] then
+            op, lhs = transform[op], lhs[2]
+         end
       end
       return { op, lhs, rhs }
    elseif op == 'if' then
@@ -774,16 +801,26 @@ function selftest ()
       opt("ether[0] = 2"))
    assert_equals({ 'if', { '>=', 'len', 7},
                    { '<',
-                     { '+', { '+', { '[]', 5, 1 }, { '[]', 6, 1 } }, 3 },
-                     10 },
+                     { '+', { '[]', 5, 1 }, { '[]', 6, 1 } },
+                     7 },
                    { 'fail' }},
       opt("(ether[5] + 1) + (ether[6] + 2) < 10"))
    assert_equals({ 'if', { '>=', 'len', 7},
                    { '<',
-                     { '+', { '+', { '[]', 5, 1 }, { '[]', 6, 1 } }, 3 },
-                     10 },
+                     { '+', { '[]', 5, 1 }, { '[]', 6, 1 } },
+                     7 },
                    { 'fail' }},
       opt("ether[5] + 1 + ether[6] + 2 < 10"))
+   assert_equals({ '>', 'len', 4},
+      opt("len + 1 > 5"))
+   assert_equals({ 'if', { '>=', 'len', 7},
+                   { '>=', { '[]', 6, 1}, 'len' },
+                   { 'fail' }},
+      opt("ether[6] + 1 > len"))
+   assert_equals({ 'if', { '>=', 'len', 7},
+                   { '>=', { '[]', 6, 1}, 'len' },
+                   { 'fail' }},
+      opt("ether[6] + 3 > len + 2"))
    assert_equals({ '>=', 'len', 2},
       opt("greater 1 and greater 2"))
    -- Could check this, but it's very large

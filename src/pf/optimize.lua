@@ -32,6 +32,12 @@ local binops = set(
 local associative_binops = set(
    '+', '*', '*64', '&', '|', '^'
 )
+local zero_neutral_binops = set(
+   '+', '-', '&', '<<', '>>'
+)
+local one_neutral_binops = set(
+   '*', '*64', '/'
+)
 local bitops = set('&', '|', '^')
 local unops = set('ntohs', 'ntohl', 'uint32', 'int32')
 -- ops that produce results of known types
@@ -177,7 +183,19 @@ local function simplify(expr, is_tail)
       local rhs = simplify(expr[3])
       if type(lhs) == 'number' and type(rhs) == 'number' then
          return assert(folders[op])(lhs, rhs)
-      elseif associative_binops[op] then
+      elseif rhs == 0 then
+         if op == '*' or op == '*64' then
+            return 0
+         elseif zero_neutral_binops[op] then
+            return lhs
+         end
+      elseif rhs == 1 then
+         if one_neutral_binops[op] then
+            return lhs
+         end
+      end
+
+      if associative_binops[op] then
          -- Try to make the right operand a number.
          if type(lhs) == 'number' then
             lhs, rhs = rhs, lhs
@@ -813,6 +831,12 @@ function selftest ()
       opt("ether[5] + 1 + ether[6] + 2 < 10"))
    assert_equals({ '>', 'len', 4},
       opt("len + 1 > 5"))
+   assert_equals({ '>', 'len', 5},
+      opt("len * 1 > 5"))
+   assert_equals({ 'if', { '>=', 'len', 7},
+                   { '>', { '[]', 5, 1 }, { '[]', 6, 1 } },
+                   { 'fail' }},
+      opt("ether[5] + 2 > ether[6] + 2"))
    assert_equals({ 'if', { '>=', 'len', 7},
                    { '>=', { '[]', 6, 1}, 'len' },
                    { 'fail' }},

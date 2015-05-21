@@ -1142,7 +1142,7 @@ function expand_arith(expr, dlt)
    local offset, offset_guards = expand_offset(addressable, dlt)
    local lhs, lhs_guards = expand_arith(expr[2], dlt)
    local size = expr[3]
-   local len_test = { '<=', { '+', { '+', offset, lhs }, size }, 'len' }
+   local len_test = { '<', { '+', { '+', offset, lhs }, size-1 }, 'len' }
    local len_guard = { len_test, { 'fail' } }
    local guards = concat(concat(offset_guards, lhs_guards), { len_guard })
    local ret =  { '[]', { '+', offset, lhs }, size }

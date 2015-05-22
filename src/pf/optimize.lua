@@ -164,7 +164,7 @@ end
 
 local simplify_if
 
-local function simplify(expr, is_tail)
+local function simplify(expr, is_tail, leaf_sub)
    if type(expr) ~= 'table' then return expr end
    local op = expr[1]
    local function decoerce(expr)
@@ -200,6 +200,27 @@ local function simplify(expr, is_tail)
       if op == 'uint32' and uint32ops[rhs[1]] then return rhs end
       if coerce_ops[op] then rhs = decoerce(rhs) end
       return { op, rhs }
+   elseif op == '[]' then
+      return { op, simplify(expr[2]), expr[3] }
+   elseif op == 'if' then
+      local t = simplify(expr[3], is_tail, leaf_sub)
+      local f = simplify(expr[4], is_tail, leaf_sub)
+      if simple[t[1]] and t[1] == f[1] then
+         if t[1] == 'fail' then
+            -- if A fail fail -> fail
+            -- A can not contain 'match' as it is not in tail position.
+            return { 'fail' }
+         else
+            -- if A S S -> A[substitute leaves with S]
+            return simplify(expr[2], is_tail, t[1])
+         end
+      end
+      local test = simplify(expr[2])
+      return simplify_if(test, t, f)
+   elseif op == 'match' or op == 'fail' then
+      return expr
+   elseif leaf_sub then
+      return { leaf_sub }
    elseif relops[op] then
       local lhs = simplify(expr[2])
       local rhs = simplify(expr[3])
@@ -212,23 +233,14 @@ local function simplify(expr, is_tail)
          op, lhs, rhs = try_invert(op, lhs, rhs)
       end
       return { op, lhs, rhs }
-   elseif op == 'if' then
-      local test = simplify(expr[2])
-      local t, f = simplify(expr[3], is_tail), simplify(expr[4], is_tail)
-      return simplify_if(test, t, f)
-   else
-      if op == 'match' or op == 'fail' then return expr end
-      if op == 'true' then
-         if is_tail then return { 'match' } end
-         return expr
-      end
-      if op == 'false' then
-         if is_tail then return { 'fail' } end
-         return expr
-      end
-      assert(op == '[]' and #expr == 3)
-      return { op, simplify(expr[2]), expr[3] }
+   elseif op == 'true' then
+      if is_tail then return { 'match' } end
+      return expr
+   elseif op == 'false' then
+      if is_tail then return { 'fail' } end
+      return expr
    end
+   error('what is this '..op)
 end
 
 function simplify_if(test, t, f)
@@ -769,6 +781,8 @@ function selftest ()
       opt("ether[0] = 2"))
    assert_equals({ '>=', 'len', 2},
       opt("greater 1 and greater 2"))
+   assert_equals(opt("tcp[100] == 1"),
+      opt("tcp and tcp[100] == 1"))
    -- Could check this, but it's very large
    opt("tcp port 80 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)")
    opt("tcp port 5555")
